@@ -47,7 +47,7 @@ char*
 strchr(const char *s, char c)
 {
   for(; *s; s++)
-    if(*s == c)
+    if(*s == c) 
       return (char*)s;
   return 0;
 }
@@ -133,4 +133,34 @@ void *
 memcpy(void *dst, const void *src, uint n)
 {
   return memmove(dst, src, n);
+}
+
+char *
+strtok(char *str, const char *delim)
+{
+  static char *cur=0;
+  char *start;
+  char *end;
+  if(str!=0) cur=str;
+  if(cur==0) return 0;
+  start=cur;
+  while(*start && strchr(delim, *start)){
+    start++;
+  }
+  if(*start=='\0'){
+    cur=0;
+    return 0;
+  }
+  end = start;
+  while(*end && !strchr(delim, *end)){
+    end++;
+  }
+  if(*end != '\0'){
+    *end='\0';
+    cur = end+1;
+  } else{
+    cur = 0;
+  }
+
+  return start;
 }

@@ -111,3 +111,29 @@ printf(const char *fmt, ...)
   va_start(ap, fmt);
   vprintf(1, fmt, ap);
 }
+
+int
+sprintf(char *str,const char *fmt, ...)
+{
+  va_list ap;
+  int p[2];
+  pipe(p);
+  va_start(ap, fmt);
+  vprintf(p[1], fmt, ap);
+  close(p[1]);
+  char buf[50];
+  read(p[0], buf, 20);
+  int cnt=0;
+
+  for(int i=0;i<50;++i){
+    if(buf[i]==' ') {
+      cnt=i-0+1;
+      buf[i+1]=0;
+      break;
+    }
+  }
+
+  strcpy(str, buf);
+  close(p[0]);
+  return cnt;
+}
