@@ -2,6 +2,7 @@
 #include "kernel/stat.h"
 #include "user/user.h"
 
+
 int main(void){
     int nums[35];
     for(int i=0;i<35;i++) nums[i] = (i>=34? -1:i+2);

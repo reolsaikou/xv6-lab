@@ -53,7 +53,7 @@ void find(char *path,char *tag){
         }
         // printf("pre printf\n");
         if(strcmp(de.name, tag) == 0)
-            printf("%s\n", buf);
+            fprintf(1, "%s\n", buf);
     }
     close(fd);
 }
