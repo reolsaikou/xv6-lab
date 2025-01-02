@@ -2,6 +2,7 @@
 #include "kernel/stat.h"
 #include "kernel/fcntl.h"
 #include "user/user.h"
+// #include "kernel/param.h"
 
 char*
 strcpy(char *s, const char *t)

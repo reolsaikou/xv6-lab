@@ -7,7 +7,7 @@
 #define MAXARGS 15
 
 char whitespace[] = " \t\r\v\n";
-char symbols[] = "<|>&;()";
+char symbols[] = "<|>&;()\\";
 
 int
 peek(char **ps, char *es, char *toks)
@@ -59,6 +59,13 @@ gettoken(char **ps, char *es, char **q, char **eq)
       s++;
     }
     break;
+  case '\\':
+    s++;
+    if(*s == 'n'){
+      ret = 'a';
+      s++;
+    }
+    break;
   default:
     ret = 'a';
     while(s < es && !strchr(whitespace, *s) && !strchr(symbols, *s) )
@@ -67,8 +74,7 @@ gettoken(char **ps, char *es, char **q, char **eq)
   }
   if(eq)
     *eq = s;
-  
-  
+
   while(s < es && strchr(whitespace, *s) && !strchr("\n", *s))
     s++;
   // printf("char:%d\n",*s);
@@ -77,7 +83,7 @@ gettoken(char **ps, char *es, char **q, char **eq)
 }
 
 
-int main(int argc,char *argv[]){
+int main(int argc,char *argv[]){//echo "1\n2" | xargs -n 1 echo line, "\n" cannot be seen as a specific symbol but two ordinary symbols.
     for(int i=0;i<argc;i++){
         // printf("argv[%d]:%s\n", i,argv[i]);
     }
@@ -109,19 +115,30 @@ int main(int argc,char *argv[]){
     char *eargv[MAXARGS];
     argc=0;
     char **exargv = malloc((MAXARGS + 1) * sizeof(char*));
+    char *command=argv[1];
+    char *ecommand=argv[1]+sizeof(argv[1]);
     // printf("argv[i]:%s", argv[1]);
-    for(int i=0,j=1;i<MAXARGS&&argv[j] != 0;i++,j++,argc++){
-      // printf("%d%d\n",i, j);
+    // bool op=false;
+    for(int i=0,j=1,c=0;i<MAXARGS&&argv[j] != 0;i++,j++,argc++){
       if(strcmp(argv[j],"-n")==0){
-        i--;j++;
+        i--;j++;argc--;
+        // op=true;
         // printf("zhongtu\n");
         continue;
       }
+      // printf("%d%d\n",i, j);
+      if(c==0){
+        command = argv[j];
+        ecommand = argv[j]+sizeof(argv[j]);
+        c=1;
+      }
       exargv[i]=argv[j];
       eargv[i]=argv[j]+sizeof(argv[j]);
-      // printf("argv[0]:%s\n", argv[i]);
+      // printf("argv[%d]:%s\n", j, argv[j]);
+      // printf("argc:%d\n", argc);
     }
     int oargc=argc;
+    *ecommand=0;
     // printf("string:%s\n",s);
     char *q, *eq;
     while(!peek(&s, es, "|)&;")){
@@ -133,29 +150,39 @@ int main(int argc,char *argv[]){
       // printf("\n");
       
       // char *end=0;
-      if(peek(&s, es, "\n")){
+      // printf("%d\n", '\\');
+      if(peek(&s, es, "\n") || peek(&s, es, "\\")){
         // printf("%s\n", *exargv[1]);
         // printf("%p\n", &argv[argc]);
+        // printf("exec echo\\n\n");
         exargv[argc]=0;
-        s++;
+        s+=2;
         // printf("max_argc:%d\n",argc);
         for(int i=0;i<argc;i++){
           *eargv[i]=0;
-          // printf("argv[%d]:%s\n", i, exargv[i]);
+          // printf("exargv[%d]:%s\n", i, exargv[i]);
         }
         // printf("\n");
         if(fork()==0){
-          exec(exargv[0],exargv);
+          exec(command,exargv);
           // exit(0);
         }else{
           wait(0);
         }
         argc=oargc;
       }
+
       if((tok=gettoken(&s, es, &q, &eq)) == 0){
         // printf("s:",s);
         break;
       }
+      // for(int i=0;i<buflen;i++){
+        // printf("%d ", *(s+i));
+      // }
+      // printf("\n");
+      
+      // char *end=0;
+      // printf("%d\n", '\\');
         // break;
       if(tok != 'a')
         panic("syntax");
@@ -177,5 +204,7 @@ int main(int argc,char *argv[]){
     }else{
     }
     exit(0);
+    exargv[0]=command;
+    exargv[0]=ecommand;
 }
 
