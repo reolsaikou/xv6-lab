@@ -289,6 +289,9 @@ fork(void)
       np->ofile[i] = filedup(p->ofile[i]);
   np->cwd = idup(p->cwd);
 
+  // copy mask of parent proc
+  np->mask = p->mask;
+
   safestrcpy(np->name, p->name, sizeof(p->name));
 
   pid = np->pid;
@@ -692,4 +695,17 @@ procdump(void)
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
+}
+
+// Collect the number of UNUSED processes
+int
+procnum(void)
+{
+  int procct = 0;
+  struct proc *p;
+  for(p = proc; p < &proc[NPROC]; p++){
+    if(p->state != UNUSED)
+      procct++;
+  }
+  return procct;
 }
