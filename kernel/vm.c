@@ -56,6 +56,13 @@ kvminithart()
   sfence_vma();
 }
 
+void
+perkvminithart(pagetable_t kpagetable)
+{
+  w_satp(MAKE_SATP(kpagetable));
+  sfence_vma();
+}
+
 // Return the address of the PTE in page table pagetable
 // that corresponds to virtual address va.  If alloc!=0,
 // create any required page-table pages.
@@ -86,6 +93,40 @@ walk(pagetable_t pagetable, uint64 va, int alloc)
     }
   }
   return &pagetable[PX(0, va)];
+}
+
+// Init a perprocess kernel pagetable
+int
+perkvminit(pagetable_t kpagetable, uint64 va){
+
+  // uart registers
+  if(mappages(kpagetable, UART0, PGSIZE, UART0, PTE_R | PTE_W) < 0) return -1;
+
+  // virtio mmio disk interface
+  if(mappages(kpagetable, VIRTIO0, PGSIZE, VIRTIO0, PTE_R | PTE_W) < 0) return -1;
+
+  // CLINT
+  if(mappages(kpagetable, CLINT, 0x10000, CLINT, PTE_R | PTE_W) < 0) return -1;
+
+  // PLIC
+  if(mappages(kpagetable, PLIC, 0x400000, PLIC, PTE_R | PTE_W) < 0) return -1;
+
+  // map kernel text executable and read-only.
+  if(mappages(kpagetable, KERNBASE, (uint64)etext-KERNBASE, KERNBASE, PTE_R | PTE_X) < 0) return -1;
+
+  // map kernel data and the physical RAM we'll make use of.
+  if(mappages(kpagetable, (uint64)etext, PHYSTOP-(uint64)etext, (uint64)etext, PTE_R | PTE_W) < 0) return -1;
+
+  // map the trampoline for trap entry/exit to
+  // the highest virtual address in the kernel.
+  if(mappages(kpagetable, TRAMPOLINE, PGSIZE, (uint64)trampoline, PTE_R | PTE_X) < 0) return -1;
+
+  // map the kernel stack
+  pte_t *pte = walk(kernel_pagetable, va, 0);
+  uint64 pa = PTE2PA(*pte);
+  if(mappages(kpagetable, va, PGSIZE, pa, PTE_R | PTE_W) < 0) return -1;
+
+  return 0;
 }
 
 // Look up a virtual address, return the physical address,
@@ -119,6 +160,13 @@ kvmmap(uint64 va, uint64 pa, uint64 sz, int perm)
 {
   if(mappages(kernel_pagetable, va, sz, pa, perm) != 0)
     panic("kvmmap");
+}
+
+void
+perkvmmap(uint64 va, uint64 pa, uint64 sz, int perm, pagetable_t kpagetable)
+{
+  if(mappages(kpagetable, va, sz, pa, perm) != 0)
+    panic("perkvmmap");
 }
 
 // translate a kernel virtual address to
@@ -156,8 +204,11 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
   for(;;){
     if((pte = walk(pagetable, a, 1)) == 0)
       return -1;
-    if(*pte & PTE_V)
+    if(*pte & PTE_V){
+      printf("va:%p, sizea:%p, last:%p, *pte:%p\n", a, last, *pte);
       panic("remap");
+    }
+      
     *pte = PA2PTE(pa) | perm | PTE_V;
     if(a == last)
       break;
@@ -180,10 +231,15 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
     panic("uvmunmap: not aligned");
 
   for(a = va; a < va + npages*PGSIZE; a += PGSIZE){
-    if((pte = walk(pagetable, a, 0)) == 0)
+    if((pte = walk(pagetable, a, 0)) == 0){
+      printf("va:%p, a:%p, page table:%p, npages:%p, do_free:%d\n", va, a, pagetable, npages, do_free);
       panic("uvmunmap: walk");
-    if((*pte & PTE_V) == 0)
+    }
+      
+    if((*pte & PTE_V) == 0){
+      printf("*pte:%p, va:%p, a:%p, page table:%p, npages:%p, do_free:%d\n", *pte, va, a, pagetable, npages, do_free);
       panic("uvmunmap: not mapped");
+    }
     if(PTE_FLAGS(*pte) == PTE_V)
       panic("uvmunmap: not a leaf");
     if(do_free){
@@ -297,6 +353,15 @@ uvmfree(pagetable_t pagetable, uint64 sz)
   if(sz > 0)
     uvmunmap(pagetable, 0, PGROUNDUP(sz)/PGSIZE, 1);
   freewalk(pagetable);
+}
+
+void
+perkvmfree(pagetable_t kpagetable, uint64 sz){
+  if(sz > 0){
+    perkvmunmap(kpagetable);
+  }
+    // uvmunmap(kpagetable, , PGROUNDUP(sz)/PGSIZE, 0);
+  freewalk(kpagetable);
 }
 
 // Given a parent process's page table, copy
@@ -439,4 +504,36 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   } else {
     return -1;
   }
+}
+
+// Print the pagetable
+void
+vmprint(pagetable_t p)
+{
+  printf("page table %p\n", p);
+  pteprint(p, 0);
+}
+
+void 
+pteprint(pagetable_t p, int level)
+{
+  for(int i=0;i<512;i++){
+    pte_t pte = p[i];
+    if((pte & PTE_V) == 0) continue;
+    uint64 child = PTE2PA(pte);
+    printf("..");
+    for(int j = 0;j<level;j++) printf(" ..");
+    printf("%d: pte %p pa %p\n", i, pte, child);
+    if((pte & (PTE_R|PTE_W|PTE_X)) == 0) pteprint((pagetable_t) child, level+1);
+  }
+}
+
+void
+perkvmunmap(pagetable_t kpagetable){
+  uvmunmap(kpagetable, UART0, PGSIZE/PGSIZE, 0);
+  uvmunmap(kpagetable, VIRTIO0, PGSIZE/PGSIZE, 0);
+  uvmunmap(kpagetable, CLINT, 0x10000/PGSIZE, 0);
+  uvmunmap(kpagetable, PLIC, 0x400000/PGSIZE, 0);
+  uvmunmap(kpagetable, KERNBASE, ((uint64)etext-KERNBASE)/PGSIZE, 0);
+  uvmunmap(kpagetable, (uint64)etext, (PHYSTOP-(uint64)etext)/PGSIZE, 0);
 }

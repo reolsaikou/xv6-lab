@@ -93,10 +93,11 @@ static struct proc*
 allocproc(void)
 {
   struct proc *p;
-
+  uint64 va = 0;
   for(p = proc; p < &proc[NPROC]; p++) {
     acquire(&p->lock);
     if(p->state == UNUSED) {
+      va = p->kstack;
       goto found;
     } else {
       release(&p->lock);
@@ -116,6 +117,14 @@ found:
   // An empty user page table.
   p->pagetable = proc_pagetable(p);
   if(p->pagetable == 0){
+    freeproc(p);
+    release(&p->lock);
+    return 0;
+  }
+
+  // An empty kernel page table
+  p->kpagetable = proc_kpagetable(p, va);
+  if(p->kpagetable == 0){
     freeproc(p);
     release(&p->lock);
     return 0;
@@ -141,7 +150,10 @@ freeproc(struct proc *p)
   p->trapframe = 0;
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
+  if(p->kpagetable)
+    proc_freekpagetable(p->kpagetable, p->kstack);
   p->pagetable = 0;
+  p->kpagetable = 0;
   p->sz = 0;
   p->pid = 0;
   p->parent = 0;
@@ -184,6 +196,25 @@ proc_pagetable(struct proc *p)
 
   return pagetable;
 }
+// Create a per-proc kernel page table for a given process,
+// derives from kernel page table
+pagetable_t
+proc_kpagetable(struct proc *p, uint64 va){
+  pagetable_t kpagetable;
+
+  // An empty page table
+  kpagetable = uvmcreate();
+  if(kpagetable == 0) return 0;
+
+  if(perkvminit(kpagetable, va) < 0) {
+    uvmunmap(kpagetable, TRAMPOLINE, 1, 0);
+    uvmfree(kpagetable, 0);
+    return 0;
+  }
+
+  return kpagetable;
+}
+
 
 // Free a process's page table, and free the
 // physical memory it refers to.
@@ -193,6 +224,13 @@ proc_freepagetable(pagetable_t pagetable, uint64 sz)
   uvmunmap(pagetable, TRAMPOLINE, 1, 0);
   uvmunmap(pagetable, TRAPFRAME, 1, 0);
   uvmfree(pagetable, sz);
+}
+
+void
+proc_freekpagetable(pagetable_t kpagetable, uint64 va){
+  uvmunmap(kpagetable, TRAMPOLINE, 1, 0);
+  uvmunmap(kpagetable, va, 1, 0);
+  perkvmfree(kpagetable, PHYSTOP);
 }
 
 // a user program that calls exec("/init")
@@ -473,6 +511,7 @@ scheduler(void)
         // before jumping back to us.
         p->state = RUNNING;
         c->proc = p;
+        perkvminithart(p->kpagetable);
         swtch(&c->context, &p->context);
 
         // Process is done running for now.
@@ -482,6 +521,7 @@ scheduler(void)
         found = 1;
       }
       release(&p->lock);
+      kvminithart();
     }
 #if !defined (LAB_FS)
     if(found == 0) {

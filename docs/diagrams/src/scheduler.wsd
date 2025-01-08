@@ -1,0 +1,16 @@
+@startuml
+start
+repeat
+    :iterate process;
+    if(process runnable?) then(yes)
+        :choose process;
+        :switch kernel pagetable;
+        :switch context;
+        :after running,set found;
+        :switch kernel pagetable;
+    else (no)
+        :do nothing;
+    endif
+repeat while(true) is (yes)
+stop
+@enduml
