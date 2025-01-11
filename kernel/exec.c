@@ -20,7 +20,7 @@ exec(char *path, char **argv)
   struct proghdr ph;
   pagetable_t pagetable = 0, oldpagetable;
   struct proc *p = myproc();
-
+  // pagetable_t kpagetable = p->kpagetable;
   begin_op();
 
   if((ip = namei(path)) == 0){
@@ -75,6 +75,10 @@ exec(char *path, char **argv)
   sp = sz;
   stackbase = sp - PGSIZE;
 
+  perkvmdealloc(p->kpagetable, 0 ,oldsz);
+  perkvmcopy(pagetable, p->kpagetable, 0, sz);
+  perkvminithart(p->kpagetable);
+
   // Push argument strings, prepare rest of stack in ustack.
   for(argc = 0; argv[argc]; argc++) {
     if(argc >= MAXARG)
@@ -123,8 +127,12 @@ exec(char *path, char **argv)
   return argc; // this ends up in a0, the first argument to main(argc, argv)
 
  bad:
-  if(pagetable)
+  if(pagetable){
     proc_freepagetable(pagetable, sz);
+    // perkvmdealloc(kpagetable, 0 ,sz);
+    // proc_freekpagetable(kpagetable, p->kstack);
+  }
+    
   if(ip){
     iunlockput(ip);
     end_op();

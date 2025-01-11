@@ -1,0 +1,2 @@
+1.The page 0 stores init's instructions, the page 3 stores user stack. The page at the top stores trampoline and trapframe. The page1 couldn't be read or write, as it's a guard page.
+2.If the srcva is a large value, srcva + len will overflow and be a small value. valu1: 0xFFFFFFFFFFFFD000 0x50000 value2: 0xFFFFFFFFFFFF2000 0XF00000 valu3:0x50000 0x1000

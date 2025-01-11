@@ -2551,7 +2551,7 @@ countfree()
 
   if(pid == 0){
     close(fds[0]);
-    
+
     while(1){
       uint64 a = (uint64) sbrk(4096);
       if(a == 0xffffffffffffffff){
@@ -2588,7 +2588,7 @@ countfree()
 
   close(fds[0]);
   wait((int*)0);
-  
+
   return n;
 }
 

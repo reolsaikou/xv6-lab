@@ -34,14 +34,14 @@ procinit(void)
       // Allocate a page for the process's kernel stack.
       // Map it high in memory, followed by an invalid
       // guard page.
-      char *pa = kalloc();
-      if(pa == 0)
-        panic("kalloc");
+      // char *pa = kalloc();
+      // if(pa == 0)f
+      //   panic("kalloc");
       uint64 va = KSTACK((int) (p - proc));
-      kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
+      // kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
       p->kstack = va;
   }
-  kvminithart();
+  // kvminithart();
 }
 
 // Must be called with interrupts disabled,
@@ -148,10 +148,10 @@ freeproc(struct proc *p)
   if(p->trapframe)
     kfree((void*)p->trapframe);
   p->trapframe = 0;
-  if(p->pagetable)
-    proc_freepagetable(p->pagetable, p->sz);
   if(p->kpagetable)
     proc_freekpagetable(p->kpagetable, p->kstack);
+  if(p->pagetable)
+    proc_freepagetable(p->pagetable, p->sz);
   p->pagetable = 0;
   p->kpagetable = 0;
   p->sz = 0;
@@ -207,8 +207,9 @@ proc_kpagetable(struct proc *p, uint64 va){
   if(kpagetable == 0) return 0;
 
   if(perkvminit(kpagetable, va) < 0) {
-    uvmunmap(kpagetable, TRAMPOLINE, 1, 0);
-    uvmfree(kpagetable, 0);
+    if(walkaddr(kpagetable, TRAMPOLINE) > 0) uvmunmap(kpagetable, TRAMPOLINE, 1, 0);
+    if(walkaddr(kpagetable, va) > 0) uvmunmap(kpagetable, va, 1, 0);
+    perkvmfree(kpagetable, PHYSTOP);
     return 0;
   }
 
@@ -229,7 +230,7 @@ proc_freepagetable(pagetable_t pagetable, uint64 sz)
 void
 proc_freekpagetable(pagetable_t kpagetable, uint64 va){
   uvmunmap(kpagetable, TRAMPOLINE, 1, 0);
-  uvmunmap(kpagetable, va, 1, 0);
+  uvmunmap(kpagetable, va, 1, 1);
   perkvmfree(kpagetable, PHYSTOP);
 }
 
@@ -259,6 +260,9 @@ userinit(void)
   uvminit(p->pagetable, initcode, sizeof(initcode));
   p->sz = PGSIZE;
 
+  // map to proc-kernel page table
+  perkvmcopy(p->pagetable, p->kpagetable, 0 ,PGSIZE);
+
   // prepare for the very first "return" from kernel to user.
   p->trapframe->epc = 0;      // user program counter
   p->trapframe->sp = PGSIZE;  // user stack pointer
@@ -280,13 +284,17 @@ growproc(int n)
   struct proc *p = myproc();
 
   sz = p->sz;
+  if(sz + n > PLIC) return -1;
   if(n > 0){
     if((sz = uvmalloc(p->pagetable, sz, sz + n)) == 0) {
       return -1;
     }
+    if(perkvmcopy(p->pagetable, p->kpagetable, sz-n, n) < 0) return -1;
   } else if(n < 0){
     sz = uvmdealloc(p->pagetable, sz, sz + n);
+    perkvmdealloc(p->kpagetable, sz, 0-n);
   }
+  perkvminithart(p->kpagetable);
   p->sz = sz;
   return 0;
 }
@@ -311,7 +319,11 @@ fork(void)
     release(&np->lock);
     return -1;
   }
+  // vmprint(np->pagetable);
   np->sz = p->sz;
+
+  perkvmcopy(np->pagetable, np->kpagetable, 0, np->sz);
+
 
   np->parent = p;
 
@@ -464,7 +476,10 @@ wait(uint64 addr)
             release(&p->lock);
             return -1;
           }
+          // printf("begin sonproc\n");
+          // vmprint(np->pagetable);
           freeproc(np);
+          // vmprint(np->pagetable);
           release(&np->lock);
           release(&p->lock);
           return pid;
@@ -516,12 +531,12 @@ scheduler(void)
 
         // Process is done running for now.
         // It should have changed its p->state before coming back.
+        kvminithart();
         c->proc = 0;
 
         found = 1;
       }
       release(&p->lock);
-      kvminithart();
     }
 #if !defined (LAB_FS)
     if(found == 0) {
@@ -736,4 +751,10 @@ procdump(void)
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
+}
+
+pagetable_t
+mykpagetable(void){
+  struct proc *p = myproc();
+  return p->kpagetable;
 }
