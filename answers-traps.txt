@@ -1,0 +1,7 @@
+a2
+inline
+34:	600080e7          	jalr	1536(ra) # 630 <printf>   0x630
+0x38
+He110 World     i shoule be set to 0x726c6400
+uncertain value   from some register
+
