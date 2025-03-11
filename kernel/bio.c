@@ -26,7 +26,7 @@
 
 
 uint Hash(uint dev, uint blockno){
-  return ((dev * 239) + blockno) % BUCKET;
+  return (dev + blockno) % BUCKET;
 }
 
 struct {
